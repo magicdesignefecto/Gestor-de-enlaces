@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Enlaces</title>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <style>
+        /* --- 1. ESTILOS GLOBALES Y VARIABLES --- */
+        :root {
+            --primary-color: #6a11cb;
+            --secondary-color: #2575fc;
+            --boveda-color: #ff6a00;
+            --card-bg: #ffffff;
+            --text-color: #333;
+            --text-light: #777;
+            --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            --shadow: 0 10px 30px rgba(0, 0, 0, 0.07);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-color);
+            min-height: 100vh;
+            overflow-x: hidden; 
+        }
+        
+        body.modal-open {
+             overflow: hidden;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+        
+        /* Icono de "cargando" para el scraping */
+        .loader {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+
+        /* --- 2. ENCABEZADO Y NAVEGACIÓN --- */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hamburger-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.5rem;
+            z-index: 201;
+            color: var(--text-color);
+        }
+
+        /* --- 3. MENÚ LATERAL DE CATEGORÍAS --- */
+        #category-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(15px);
+            border-right: 1px solid rgba(255, 255, 255, 0.3);
+            z-index: 200;
+            padding: 2rem 1rem;
+            padding-top: 6rem; /* <-- Relleno para escritorio */
+            transform: translateX(-100%);
+            transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+            /* NUEVO: Permite scroll en el menú si hay muchos botones */
+            overflow-y: auto;
+        }
+
+        #category-menu.open {
+            transform: translateX(0);
+            box-shadow: 0 0 40px rgba(0,0,0,0.1);
+        }
+
+        #category-menu h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            padding-left: 0.5rem;
+        }
+
+        #category-menu ul {
+            list-style: none;
+        }
+
+        #category-menu li a {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.9rem 1rem;
+            text-decoration: none;
+            color: var(--text-color);
+            font-weight: 500;
+            border-radius: 10px;
+            transition: background 0.2s ease, color 0.2s ease;
+            cursor: pointer;
+        }
+
+        #category-menu li a:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        #category-menu li a.active {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 15px rgba(106, 17, 203, 0.3);
+        }
+        
+         #category-menu li a.active[data-category="boveda"] {
+            background: var(--boveda-color);
+            box-shadow: 0 4px 15px rgba(255, 106, 0, 0.3);
+         }
+        
+        /* NUEVO: Estilos para botones de Importar/Exportar */
+        #category-menu li a#export-btn,
+        #category-menu li a#import-btn {
+            color: #555;
+            font-weight: 600;
+        }
+        #category-menu li a#export-btn:hover {
+            background: rgba(34, 197, 94, 0.1); color: #16a34a;
+        }
+        #category-menu li a#import-btn:hover {
+            background: rgba(249, 115, 22, 0.1); color: #f97316;
+        }
+
+
+        #menu-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 199;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.4s ease, visibility 0.4s ease;
+        }
+
+        #menu-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* --- 4. CONTENIDO PRINCIPAL --- */
+        main {
+            padding: 2rem;
+        }
+        
+        /* Contenedor de Búsqueda (Bóveda) */
+        #search-container {
+            margin-bottom: 2rem;
+        }
+        /* NUEVO: Contenedor de Búsqueda (Enlaces) */
+        #link-search-container {
+            margin-bottom: 2rem;
+        }
+        
+        #search-bar,
+        #link-search-bar { /* NUEVO: Se aplica estilo a ambas barras */
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.1rem;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+        #search-bar:focus {
+            outline: none;
+            border-color: var(--boveda-color);
+            box-shadow: 0 0 0 4px rgba(255, 106, 0, 0.1);
+        }
+        /* NUEVO: Estilo de focus para la barra de enlaces */
+        #link-search-bar:focus {
+             outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(106, 17, 203, 0.1);
+        }
+
+        
+        #boveda-list {
+            list-style: none;
+        }
+        .boveda-item {
+            background: var(--card-bg);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            box-shadow: var(--shadow);
+            display: grid;
+            grid-template-columns: 1fr 1fr auto auto;
+            gap: 1rem;
+            align-items: center;
+        }
+        .boveda-item-col {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            overflow: hidden;
+        }
+         .boveda-item-col strong {
+            font-size: 1.1rem;
+            color: var(--boveda-color);
+            flex-shrink: 0;
+         }
+         .boveda-item-col span {
+            font-family: monospace;
+            font-size: 1.1rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+         }
+        
+        .copy-com-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-light);
+            padding: 0.25rem;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .copy-com-btn:hover {
+            background: #eee;
+            color: var(--text-color);
+        }
+        .copy-com-btn.copied {
+            color: #16a34a;
+        }
+        
+        .delete-boveda-btn {
+            background: #eee;
+            color: #333;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .delete-boveda-btn:hover {
+            background: #ff3b30;
+            color: white;
+        }
+
+
+        #link-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .link-card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+        }
+
+        .link-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Contenedor para botones de la tarjeta */
+        .card-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 0.5rem;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .link-card:hover .card-actions {
+            opacity: 1;
+        }
+        
+        .card-action-btn {
+            background: rgba(0,0,0,0.4);
+            color: white;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card-action-btn:hover {
+            background: var(--primary-color);
+        }
+        .card-action-btn.delete:hover {
+            background: #ff3b30;
+        }
+
+
+        .link-card-image-link { /* */
+            display: block;
+            width: 100%;
+            height: 180px;
+            border-bottom: 1px solid #eee;
+        }
+        .link-card-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .link-card-content {
+            padding: 1rem 1.5rem;
+        }
+
+        .link-card-content h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .link-card-content p {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 1rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-height: 2.7em;
+        }
+
+        .link-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+        }
+
+        .link-card-category {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        
+        .link-card-category[data-category="ia"] { background: rgba(56, 189, 248, 0.1); color: #0ea5e9; }
+        .link-card-category[data-category="redes-sociales"] { background: rgba(34, 197, 94, 0.1); color: #16a34a; }
+        .link-card-category[data-category="wordpress"] { background: rgba(139, 92, 246, 0.1); color: #7c3aed; }
+        .link-card-category[data-category="seo"] { background: rgba(249, 115, 22, 0.1); color: #f97316; }
+        .link-card-category[data-category="estudio"] { background: rgba(234, 179, 8, 0.1); color: #ca8a04; }
+        .link-card-category[data-category="uso-frecuente"] { background: rgba(244, 63, 94, 0.1); color: #f43f5e; }
+        .link-card-category[data-category="otro"] { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+
+
+        .link-card-date {
+            color: var(--text-light);
+        }
+        
+        /* --- 5. BOTÓN FLOTANTE "AÑADIR" --- */
+        #add-link-btn {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            border: none;
+            border-radius: 50%;
+            box-shadow: 0 8px 25px rgba(106, 17, 203, 0.4);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            z-index: 101;
+        }
+        
+        #add-link-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 12px 30px rgba(106, 17, 203, 0.5);
+        }
+
+        #add-link-btn.boveda-active {
+            background: linear-gradient(135deg, var(--boveda-color), #ff9a00);
+            box-shadow: 0 8px 25px rgba(255, 106, 0, 0.4);
+        }
+        #add-link-btn.boveda-active:hover {
+            box-shadow: 0 12px 30px rgba(255, 106, 0, 0.5);
+        }
+        
+        #add-link-btn i {
+            width: 28px;
+            height: 28px;
+        }
+
+        /* --- 6. MODALES --- */
+        
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 300;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease;
+        }
+        
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+            width: 90%;
+            max-width: 450px; 
+            z-index: 301;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        
+        .modal-overlay.open,
+        .modal.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .modal.open {
+             transform: translate(-50%, -50%) scale(1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem; 
+            border-bottom: 1px solid #eee;
+        }
+        
+        .modal-header h2 {
+            font-size: 1.1rem; 
+        }
+
+        .close-modal-btn {
+            background: #eee;
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-light);
+        }
+        .close-modal-btn:hover {
+            background: #ddd;
+        }
+
+        .modal-content {
+            padding: 1.25rem; 
+        }
+
+        .form-group {
+            margin-bottom: 0.75rem;
+            position: relative; /* Para el loader */
+        }
+        
+        .form-group .loader { /* Posicionar loader */
+            position: absolute;
+            right: 10px;
+            top: 32px; /* Ajustar */
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            font-size: 0.85rem; 
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 0.6rem 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 60px; 
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(106, 17, 203, 0.1);
+        }
+        
+        #boveda-modal .form-group input:focus {
+             border-color: var(--boveda-color);
+             box-shadow: 0 0 0 3px rgba(255, 106, 0, 0.1);
+        }
+        #boveda-modal .btn-primary {
+            background: var(--boveda-color);
+            box-shadow: 0 4px 15px rgba(255, 106, 0, 0.2);
+        }
+         #boveda-modal .btn-primary:hover {
+            background: #e65c00;
+            box-shadow: 0 6px 20px rgba(255, 106, 0, 0.3);
+         }
+        
+        
+        .modal-footer {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #eee;
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem; /* Más espacio */
+        }
+
+        /* Corrección Botones Simétricos */
+        .modal-footer .btn {
+            flex: 1;
+            max-width: 160px; /* Aumentado para que quepa "Guardar en Bóveda" */
+        }
+        
+        .btn {
+            padding: 0.6rem 1.25rem;
+            border: 1px solid transparent; 
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 90px; /* Ancho mínimo */
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 15px rgba(106, 17, 203, 0.2);
+        }
+        .btn-primary:hover {
+            background: #5a0eb3;
+            box-shadow: 0 6px 20px rgba(106, 17, 203, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: var(--card-bg); /* Fondo blanco */
+            color: var(--text-color);
+            border-color: #ddd; /* Borde sutil */
+        }
+        .btn-secondary:hover {
+            background: #f9f9f9; 
+            border-color: #ccc;
+        }
+
+        /* --- 7. ESTILOS RESPONSIVOS --- */
+
+        /* Para tablets y móviles en horizontal (menos de 768px) */
+        @media (max-width: 768px) {
+            
+            #category-menu {
+                padding-top: 2.5rem; 
+            }
+
+            header {
+                padding: 1rem;
+            }
+            
+            main {
+                padding: 1rem;
+                padding-bottom: 90px;
+            }
+
+            /* Arreglo para la Bóveda */
+            .boveda-item {
+                grid-template-columns: 1fr 1fr; /* 2 columnas iguales */
+                grid-template-areas: 
+                    "id-col id-col"     /* Fila 1: ID ocupa todo */
+                    "com-col com-col"   /* Fila 2: COM ocupa todo */
+                    "copy-btn del-btn"; /* Fila 3: Botones comparten */
+                gap: 0.75rem;
+            }
+
+            /* Asignamos los elementos a las nuevas áreas */
+            .boveda-item-col:nth-child(1) { grid-area: id-col; }
+            .boveda-item-col:nth-child(2) { grid-area: com-col; }
+            .copy-com-btn { 
+                grid-area: copy-btn; 
+                justify-self: center; /* Centramos el botón en su celda */
+            }
+            .delete-boveda-btn { 
+                grid-area: del-btn; 
+                justify-self: center; /* Centramos el botón en su celda */
+            }
+        }
+
+
+        /* Para móviles pequeños (menos de 480px) */
+        @media (max-width: 480px) {
+            
+            header h1 {
+                font-size: 1.25rem; /* Título un poco más pequeño */
+            }
+
+            /* Arreglo para botones del Modal */
+            .modal-footer {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+            .modal-footer .btn {
+                max-width: 100%; /* Quitamos el max-width para que ocupen todo */
+            }
+
+            /* Acercamos el botón flotante a la esquina */
+            #add-link-btn {
+                bottom: 1rem;
+                right: 1rem;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Gestor de Enlaces</h1>
+        <button class="hamburger-btn" id="menu-toggle-btn">
+            <i data-feather="menu"></i>
+        </button>
+    </header>
+
+    <nav id="category-menu">
+        <h2>Categorías</h2>
+        <ul id="category-list">
+            <li><a href="#todos" class="active" data-category="todos"><i data-feather="grid"></i> Todos</a></li>
+            <li><a href="#ia" data-category="ia"><i data-feather="cpu"></i> IA</a></li>
+            <li><a href="#redes-sociales" data-category="redes-sociales"><i data-feather="share-2"></i> Redes Sociales</a></li>
+            <li><a href="#wordpress" data-category="wordpress"><i data-feather="layout"></i> WordPress</a></li>
+            <li><a href="#seo" data-category="seo"><i data-feather="trending-up"></i> SEO</a></li>
+            <li><a href="#estudio" data-category="estudio"><i data-feather="book-open"></i> Estudio</a></li>
+            <li><a href="#uso-frecuente" data-category="uso-frecuente"><i data-feather="star"></i> Uso Frecuente</a></li>
+            <li><a href="#boveda" data-category="boveda"><i data-feather="archive"></i> Bóveda de Recursos</a></li>
+            
+            <li style="margin-top: 1.5rem; border-top: 1px solid #eee; padding-top: 1rem;">
+                <a href="#" id="import-btn"><i data-feather="upload"></i> Importar Datos</a>
+            </li>
+            <li>
+                <a href="#" id="export-btn"><i data-feather="download"></i> Exportar Datos</a>
+            </li>
+        </ul>
+    </nav>
+    
+    <div id="menu-overlay"></div>
+
+    <main>
+        <div id="link-search-container" class="hidden">
+            <input type="search" id="link-search-bar" placeholder="Buscar en enlaces por título o descripción...">
+        </div>
+
+        <div id="search-container" class="hidden">
+            <input type="search" id="search-bar" placeholder="Buscar en la bóveda por ID o COM...">
+        </div>
+
+        <div id="link-grid">
+            </div>
+        
+        <ul id="boveda-list" class="hidden">
+            </ul>
+        
+    </main>
+
+    <button id="add-link-btn" title="Añadir nuevo enlace">
+        <i data-feather="plus"></i>
+    </button>
+
+    <div class="modal-overlay" id="add-link-modal-overlay"></div>
+    <div class="modal" id="add-link-modal">
+        <div class="modal-header">
+            <h2 id="link-modal-title">Añadir Nuevo Enlace</h2> 
+            <button class="close-modal-btn" data-modal-id="add-link-modal" title="Cerrar">
+                <i data-feather="x"></i>
+            </button>
+        </div>
+        <form id="add-link-form">
+            <input type="hidden" id="link-id">
+            
+            <div class="modal-content">
+                <div class="form-group">
+                    <label for="link-url">URL del Enlace</label>
+                    <input type="url" id="link-url" placeholder="https://ejemplo.com" required>
+                    <div id="url-loader" class="loader hidden"></div>
+                </div>
+                <div class="form-group">
+                    <label for="link-title">Título</label>
+                    <input type="text" id="link-title" placeholder="Ej: Guía de CSS Grid" required>
+                </div>
+                <div class="form-group">
+                    <label for="link-desc">Descripción</label>
+                    <textarea id="link-desc" rows="2" placeholder="Una breve descripción del enlace..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="link-image">URL de Imagen (Opcional)</label>
+                    <input type="url" id="link-image" placeholder="Pega la URL o deja que se auto-rellene">
+                </div>
+                <div class="form-group">
+                    <label for="link-category">Categoría</label>
+                    <select id="link-category">
+                        <option value="ia">IA</option>
+                        <option value="redes-sociales">Redes Sociales</option>
+                        <option value="wordpress">WordPress</option>
+                        <option value="seo">SEO</option>
+                        <option value="estudio">Estudio</option>
+                        <option value="uso-frecuente">Uso Frecuente</option>
+                        <option value="otro">Otro</option>
+                    </select> 
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-modal-id="add-link-modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="link-submit-btn">Guardar Enlace</button>
+            </div>
+        </form>
+    </div>
+    
+    <div class="modal-overlay" id="boveda-modal-overlay"></div>
+    <div class="modal" id="boveda-modal">
+        <div class="modal-header">
+            <h2>Añadir a Bóveda</h2>
+            <button class="close-modal-btn" data-modal-id="boveda-modal" title="Cerrar">
+                <i data-feather="x"></i>
+            </button>
+        </div>
+        <form id="add-boveda-form">
+            <div class="modal-content">
+                <div class="form-group">
+                    <label for="boveda-id">ID:</label>
+                    <input type="text" id="boveda-id" placeholder="Ej: CLIENTE-001" required>
+                </div>
+                <div class="form-group">
+                    <label for="boveda-com">COM:</label>
+                    <input type="text" id="boveda-com" placeholder="Comentario o dato..." required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-modal-id="boveda-modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar en Bóveda</button>
+            </div>
+        </form>
+    </div>
+
+
+    <script>
+        // --- INICIALIZAR ICONOS ---
+        // Lo llamamos una sola vez al inicio.
+        feather.replace();
+
+        // --- 1. BASE DE DATOS LOCAL (TEMPORAL) ---
+        let enlaces = [
+            // Los datos se cargarán desde localStorage
+        ];
+        
+        let bovedaItems = [
+            // Los datos se cargarán desde localStorage
+        ];
+        
+        let currentCategory = 'todos';
+        let currentEditId = null; // Variable para saber si estamos editando
+
+        // --- 2. ELEMENTOS DEL DOM ---
+        const body = document.body;
+        
+        const menuBtn = document.getElementById('menu-toggle-btn');
+        const menu = document.getElementById('category-menu');
+        const menuOverlay = document.getElementById('menu-overlay');
+        const categoryList = document.getElementById('category-list');
+        
+        const addLinkBtn = document.getElementById('add-link-btn');
+        
+        // Modal de Enlaces
+        const linkModal = document.getElementById('add-link-modal');
+        const linkModalTitle = document.getElementById('link-modal-title');
+        const linkForm = document.getElementById('add-link-form');
+        const linkSubmitBtn = document.getElementById('link-submit-btn');
+        const linkIdInput = document.getElementById('link-id');
+        const urlInput = document.getElementById('link-url');
+        const urlLoader = document.getElementById('url-loader');
+        
+        // Modal de Bóveda
+        const bovedaForm = document.getElementById('add-boveda-form');
+        
+        // Corrección: Usamos el atributo [data-modal-id] para seleccionar TODOS los botones de cerrar
+        const allCloseModalBtns = document.querySelectorAll('[data-modal-id]');
+        const allModalOverlays = document.querySelectorAll('.modal-overlay');
+        
+        const linkGrid = document.getElementById('link-grid');
+        
+        // Búsqueda Bóveda
+        const searchContainer = document.getElementById('search-container');
+        const searchBar = document.getElementById('search-bar');
+        const bovedaList = document.getElementById('boveda-list');
+        
+        // NUEVO: Búsqueda Enlaces
+        const linkSearchContainer = document.getElementById('link-search-container');
+        const linkSearchBar = document.getElementById('link-search-bar');
+
+        // NUEVO: Botones Importar/Exportar
+        const importBtn = document.getElementById('import-btn');
+        const exportBtn = document.getElementById('export-btn');
+        
+
+        // --- 3. FUNCIONALIDAD DEL MENÚ HAMBURGUESA ---
+        function toggleMenu() {
+            menu.classList.toggle('open');
+            menuOverlay.classList.toggle('open');
+        }
+        menuBtn.addEventListener('click', toggleMenu);
+        menuOverlay.addEventListener('click', toggleMenu);
+
+        // --- 4. FUNCIONALIDAD DE MODALES ---
+        
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            const overlay = document.getElementById(modalId + '-overlay');
+            
+            allModalOverlays.forEach(o => o.classList.remove('open'));
+            
+            if(modal && overlay) {
+                modal.classList.add('open');
+                overlay.classList.add('open');
+                body.classList.add('modal-open');
+            } else {
+                console.error("No se encontró el modal o el overlay para el ID:", modalId);
+            }
+        }
+        
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            const overlay = document.getElementById(modalId + '-overlay');
+            if(modal && overlay) {
+                modal.classList.remove('open');
+                overlay.classList.remove('open');
+                body.classList.remove('modal-open');
+            }
+            
+            // Resetea el formulario de enlace al cerrar
+            if (modalId === 'add-link-modal') {
+                linkForm.reset();
+                currentEditId = null; // Limpia el ID de edición
+                linkModalTitle.textContent = "Añadir Nuevo Enlace";
+                linkSubmitBtn.textContent = "Guardar Enlace";
+                urlLoader.classList.add('hidden');
+            }
+        }
+        
+        addLinkBtn.addEventListener('click', () => {
+            if (currentCategory === 'boveda') {
+                openModal('boveda-modal');
+            } else {
+                // Llama a la función de modo "Añadir"
+                prepareAddModal();
+            }
+        });
+
+        // Este listener ahora funciona para la 'X' y los botones 'Cancelar'
+        allCloseModalBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const modalId = e.currentTarget.getAttribute('data-modal-id');
+                closeModal(modalId);
+            });
+        });
+        
+        allModalOverlays.forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                const modalId = e.currentTarget.id.replace('-overlay', '');
+                closeModal(modalId);
+            });
+        });
+        
+
+        // --- 5. LÓGICA DE RENDERIZADO (DIBUJAR CONTENIDO) ---
+        
+        // Función para generar iconos SVG (¡no más parpadeos!)
+        function getIcon(name, options = {}) {
+            if (feather.icons[name]) {
+                return feather.icons[name].toSvg(options);
+            }
+            return ''; // Devuelve vacío si el icono no existe
+        }
+
+        // NUEVO: renderLinks() ahora usa la barra de búsqueda de enlaces
+        function renderLinks() {
+            linkGrid.innerHTML = '';
+            
+            const searchTerm = linkSearchBar.value.toLowerCase();
+
+            const linksToShow = enlaces.filter(link => {
+                const matchesCategory = currentCategory === 'todos' || link.category === currentCategory;
+                if (!matchesCategory) return false;
+
+                // Filtro de búsqueda
+                const matchesSearch = searchTerm === '' ||
+                                      link.title.toLowerCase().includes(searchTerm) ||
+                                      link.desc.toLowerCase().includes(searchTerm);
+                return matchesSearch;
+            });
+            
+            linkGrid.classList.remove('hidden');
+            bovedaList.classList.add('hidden');
+            
+            if (linksToShow.length === 0) {
+                 linkGrid.innerHTML = `<p>No se encontraron enlaces. Intenta con otra búsqueda o añade uno nuevo.</p>`;
+                 return;
+            }
+
+            linksToShow.forEach(link => {
+                const card = document.createElement('article');
+                card.className = 'link-card';
+                card.innerHTML = `
+                    <div class="card-actions">
+                        <button class="card-action-btn edit" data-id="${link.id}" title="Editar enlace">
+                            ${getIcon('edit-2', { width: 14, height: 14 })}
+                        </button>
+                        <button class="card-action-btn copy" data-url="${link.url}" title="Copiar enlace">
+                            ${getIcon('copy', { width: 14, height: 14 })}
+                        </button>
+                        <button class="card-action-btn delete" data-id="${link.id}" title="Borrar enlace">
+                            ${getIcon('trash-2', { width: 14, height: 14 })}
+                        </button>
+                    </div>
+                    <a href="${link.url}" target="_blank" rel="noopener noreferrer" class="link-card-image-link">
+                        <img src="${link.img || 'https://via.placeholder.com/400x250/c3cfe2/6a11cb?text=Enlace'}" alt="Imagen del enlace" class="link-card-image" onerror="this.src='https://via.placeholder.com/400x250/c3cfe2/6a11cb?text=Error'">
+                    </a>
+                    <div class="link-card-content">
+                        <h3>${link.title}</h3>
+                        <p>${link.desc}</p>
+                        <div class="link-card-footer">
+                            <span class="link-card-category" data-category="${link.category}">${link.category}</span>
+                            <span class="link-card-date">${link.date}</span>
+                        </div>
+                    </div>
+                `;
+                linkGrid.appendChild(card);
+            });
+        }
+
+        function renderBoveda(searchTerm = '') {
+            bovedaList.innerHTML = '';
+            const lowerSearchTerm = searchTerm.toLowerCase();
+            
+            const itemsToShow = bovedaItems.filter(item => {
+                return item.id.toLowerCase().includes(lowerSearchTerm) ||
+                       item.com.toLowerCase().includes(lowerSearchTerm);
+            });
+
+            linkGrid.classList.add('hidden');
+            bovedaList.classList.remove('hidden');
+            
+            if (itemsToShow.length === 0 && searchTerm === '') {
+                 bovedaList.innerHTML = `<li class="boveda-item">Aún no hay nada en la bóveda. Añade un item con el botón +.</li>`;
+            } else if (itemsToShow.length === 0) {
+                bovedaList.innerHTML = `<li class="boveda-item">No se encontraron resultados para "${searchTerm}".</li>`;
+            } else {
+                itemsToShow.forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = 'boveda-item';
+                    li.innerHTML = `
+                        <div class="boveda-item-col">
+                            <strong>ID:</strong> <span>${item.id}</span>
+                        </div>
+                        <div class="boveda-item-col">
+                            <strong>COM:</strong> <span>${item.com}</span>
+                        </div>
+                        <button class="copy-com-btn" data-copy="${item.com}" title="Copiar COM">
+                            ${getIcon('copy', { width: 16, height: 16 })}
+                        </button>
+                        <button class="delete-boveda-btn" data-id="${item.id}" title="Borrar item">
+                            ${getIcon('trash-2', { width: 16, height: 16 })}
+                        </button>
+                    `;
+                    bovedaList.appendChild(li);
+                });
+            }
+        }
+        
+        // --- 6. MANEJO DE CATEGORÍAS Y NAVEGACIÓN ---
+        
+        // NUEVO: Actualizado para mostrar la barra de búsqueda correcta
+        function updateUIForCategory(category) {
+             currentCategory = category;
+            
+            if (currentCategory === 'boveda') {
+                addLinkBtn.classList.add('boveda-active');
+            } else {
+                addLinkBtn.classList.remove('boveda-active');
+            }
+            
+            categoryList.querySelectorAll('a').forEach(a => {
+                if (a.getAttribute('data-category') === currentCategory) {
+                    a.classList.add('active');
+                } else {
+                    a.classList.remove('active');
+                }
+            });
+            
+            if (currentCategory === 'boveda') {
+                searchContainer.classList.remove('hidden'); // Muestra búsqueda Bóveda
+                linkSearchContainer.classList.add('hidden'); // Oculta búsqueda Enlaces
+                renderBoveda(searchBar.value);
+            } else {
+                searchContainer.classList.add('hidden'); // Oculta búsqueda Bóveda
+                linkSearchContainer.classList.remove('hidden'); // Muestra búsqueda Enlaces
+                renderLinks();
+            }
+        }
+        
+        categoryList.addEventListener('click', (e) => {
+            const clickedLink = e.target.closest('a');
+            if (!clickedLink) return;
+
+            // Ignora los botones de Importar/Exportar
+            if (clickedLink.id === 'import-btn' || clickedLink.id === 'export-btn') {
+                return;
+            }
+
+            e.preventDefault();
+            const category = clickedLink.getAttribute('data-category');
+            
+            if (category !== currentCategory) {
+                history.pushState({ category: category }, '', `#${category}`);
+                updateUIForCategory(category);
+            }
+            
+            toggleMenu();
+        });
+        
+        window.addEventListener('popstate', (e) => {
+            let category;
+            if (e.state && e.state.category) {
+                category = e.state.category;
+            } else {
+                category = window.location.hash.substring(1) || 'todos';
+            }
+            updateUIForCategory(category);
+        });
+        
+        // --- 7. LÓGICA "AGREGAR" Y "EDITAR" ---
+        
+        function prepareAddModal() {
+            currentEditId = null;
+            linkModalTitle.textContent = "Añadir Nuevo Enlace";
+            linkSubmitBtn.textContent = "Guardar Enlace";
+            linkForm.reset();
+            openModal('add-link-modal');
+        }
+        
+        function prepareEditModal(id) {
+            const linkToEdit = enlaces.find(link => link.id.toString() === id.toString());
+            if (!linkToEdit) return;
+            
+            currentEditId = id; 
+            
+            linkIdInput.value = linkToEdit.id;
+            document.getElementById('link-url').value = linkToEdit.url;
+            document.getElementById('link-title').value = linkToEdit.title;
+            document.getElementById('link-desc').value = linkToEdit.desc;
+            document.getElementById('link-image').value = linkToEdit.img;
+            document.getElementById('link-category').value = linkToEdit.category;
+            
+            linkModalTitle.textContent = "Editar Enlace";
+            linkSubmitBtn.textContent = "Actualizar";
+            
+            openModal('add-link-modal');
+        }
+
+        linkForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            if (currentEditId) {
+                const linkIndex = enlaces.findIndex(link => link.id.toString() === currentEditId.toString());
+                if (linkIndex === -1) return; 
+                
+                enlaces[linkIndex] = {
+                    id: currentEditId, 
+                    title: document.getElementById('link-title').value,
+                    desc: document.getElementById('link-desc').value,
+                    url: document.getElementById('link-url').value,
+                    img: document.getElementById('link-image').value.trim(),
+                    category: document.getElementById('link-category').value,
+                    date: enlaces[linkIndex].date // Mantener la fecha original
+                };
+                
+            } else {
+                const nuevoEnlace = {
+                    id: Date.now(), 
+                    title: document.getElementById('link-title').value,
+                    desc: document.getElementById('link-desc').value,
+                    url: document.getElementById('link-url').value,
+                    img: document.getElementById('link-image').value.trim(), 
+                    category: document.getElementById('link-category').value,
+                    date: new Date().toLocaleDateString('es-ES')
+                };
+                enlaces.unshift(nuevoEnlace);
+            }
+            
+            saveData(); // NUEVO: Guardar en localStorage
+            renderLinks();
+            closeModal('add-link-modal');
+            linkForm.reset();
+        });
+        
+        bovedaForm.addEventListener('submit', (e) => {
+             e.preventDefault();
+             const nuevoItem = {
+                id: document.getElementById('boveda-id').value,
+                com: document.getElementById('boveda-com').value
+             };
+             bovedaItems.unshift(nuevoItem);
+             
+             saveData(); // NUEVO: Guardar en localStorage
+             renderBoveda(searchBar.value);
+             closeModal('boveda-modal');
+             bovedaForm.reset();
+        });
+
+        // --- 8. LÓGICA "BORRAR", "COPIAR", "EDITAR" (en tarjetas) ---
+        
+        linkGrid.addEventListener('click', (e) => {
+            const deleteBtn = e.target.closest('.delete');
+            const editBtn = e.target.closest('.edit');
+            const copyBtn = e.target.closest('.copy');
+
+            if (deleteBtn) {
+                const idToDelete = deleteBtn.getAttribute('data-id');
+                if (confirm('¿Estás seguro de que quieres borrar este enlace?')) {
+                    enlaces = enlaces.filter(link => link.id.toString() !== idToDelete);
+                    saveData(); // NUEVO: Guardar en localStorage
+                    renderLinks();
+                }
+                return; 
+            }
+            
+            if (editBtn) {
+                const idToEdit = editBtn.getAttribute('data-id');
+                prepareEditModal(idToEdit); 
+                return; 
+            }
+            
+            if (copyBtn) {
+                const urlToCopy = copyBtn.getAttribute('data-url');
+                navigator.clipboard.writeText(urlToCopy).then(() => {
+                    copyBtn.innerHTML = getIcon('check', { width: 14, height: 14 });
+                    setTimeout(() => {
+                         copyBtn.innerHTML = getIcon('copy', { width: 14, height: 14 });
+                    }, 2000);
+                });
+                return; 
+            }
+        });
+        
+        bovedaList.addEventListener('click', (e) => {
+            const deleteBtn = e.target.closest('.delete-boveda-btn');
+            if (deleteBtn) {
+                const idToDelete = deleteBtn.getAttribute('data-id');
+                if (confirm('¿Estás seguro de que quieres borrar este item de la bóveda?')) {
+                    bovedaItems = bovedaItems.filter(item => item.id !== idToDelete);
+                    saveData(); // NUEVO: Guardar en localStorage
+                    renderBoveda(searchBar.value);
+                }
+                return;
+            }
+            
+            const copyBtn = e.target.closest('.copy-com-btn');
+            if (copyBtn) {
+                const textToCopy = copyBtn.getAttribute('data-copy');
+                
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    copyBtn.innerHTML = getIcon('check', { width: 16, height: 16 });
+                    copyBtn.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        copyBtn.innerHTML = getIcon('copy', { width: 16, height: 16 });
+                        copyBtn.classList.remove('copied');
+                    }, 2000);
+                });
+            }
+        });
+        
+        // --- 9. LÓGICA DE "SCRAPING" AUTOMÁTICO ---
+        
+        urlInput.addEventListener('paste', (e) => {
+            setTimeout(() => {
+                fetchLinkMetadata(e.target.value);
+            }, 100);
+        });
+        
+        urlInput.addEventListener('blur', (e) => {
+            fetchLinkMetadata(e.target.value);
+        });
+        
+        async function fetchLinkMetadata(url) {
+            if (!url || !url.startsWith('http')) return; 
+            
+            urlLoader.classList.remove('hidden'); 
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            
+            try {
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error('No se pudo cargar la info.');
+                
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                const title = doc.querySelector('title')?.innerText || '';
+                const description = doc.querySelector('meta[name="description"]')?.getAttribute('content') || '';
+                const imageUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+                
+                if (!document.getElementById('link-title').value) {
+                    document.getElementById('link-title').value = title;
+                }
+                if (!document.getElementById('link-desc').value) {
+                    document.getElementById('link-desc').value = description;
+                }
+                if (!document.getElementById('link-image').value) {
+                    document.getElementById('link-image').value = imageUrl;
+                }
+                
+            } catch (error) {
+                console.error("Error al 'scrapear' la URL:", error);
+            } finally {
+                urlLoader.classList.add('hidden'); 
+            }
+        }
+        
+        // --- 10. LÓGICA DE BÚSQUEDA ---
+        
+        searchBar.addEventListener('input', (e) => {
+            renderBoveda(e.target.value);
+        });
+        
+        // NUEVO: Listener para la barra de búsqueda de enlaces
+        linkSearchBar.addEventListener('input', renderLinks);
+
+
+        // --- NUEVO: 11. PERSISTENCIA DE DATOS (localStorage) ---
+        
+        function saveData() {
+            localStorage.setItem('gestorEnlaces', JSON.stringify(enlaces));
+            localStorage.setItem('gestorBoveda', JSON.stringify(bovedaItems));
+        }
+
+        function loadData() {
+            const enlacesGuardados = localStorage.getItem('gestorEnlaces');
+            const bovedaGuardada = localStorage.getItem('gestorBoveda');
+
+            if (enlacesGuardados) {
+                enlaces = JSON.parse(enlacesGuardados);
+            }
+            if (bovedaGuardada) {
+                bovedaItems = JSON.parse(bovedaGuardada);
+            }
+        }
+
+        // --- NUEVO: 12. FUNCIONES DE IMPORTAR/EXPORTAR ---
+
+        function exportData() {
+            // Prevenir que se cierre el menú si está en móvil
+            event.preventDefault();
+
+            const data = {
+                enlaces: enlaces,
+                bovedaItems: bovedaItems
+            };
+            const jsonString = JSON.stringify(data, null, 2); // El 'null, 2' lo hace legible
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            
+            // Crea un nombre de archivo con la fecha
+            const fechaHoy = new Date().toISOString().split('T')[0];
+            a.href = url;
+            a.download = `gestor-enlaces-backup-${fechaHoy}.json`;
+            
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            if (menu.classList.contains('open')) {
+                toggleMenu();
+            }
+        }
+
+        function importData() {
+            // Prevenir que se cierre el menú si está en móvil
+            event.preventDefault();
+
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json,application/json';
+            
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (data.enlaces || data.bovedaItems) {
+                            
+                            if (confirm('¿Quieres reemplazar tus datos actuales con los del archivo? Se perderán los datos locales no guardados.')) {
+                                enlaces = data.enlaces || [];
+                                bovedaItems = data.bovedaItems || [];
+                                
+                                saveData(); // Guardar los nuevos datos importados
+                                
+                                // Ir a 'todos' y refrescar
+                                history.pushState({ category: 'todos' }, '', `#todos`);
+                                updateUIForCategory('todos'); 
+                            }
+                        } else {
+                            alert('El archivo no parece ser un backup válido.');
+                        }
+                    } catch (error) {
+                        console.error('Error al importar:', error);
+                        alert('Error al leer el archivo. Asegúrate de que sea un JSON válido.');
+                    }
+                };
+                reader.readAsText(file);
+            };
+            
+            input.click();
+            
+            if (menu.classList.contains('open')) {
+                toggleMenu();
+            }
+        }
+
+        // Listeners para los nuevos botones
+        exportBtn.addEventListener('click', exportData);
+        importBtn.addEventListener('click', importData);
+
+
+        // --- 13. INICIO ---
+        
+        function initializeApp() {
+            loadData(); // NUEVO: Cargar datos al iniciar
+            
+            const initialCategory = window.location.hash.substring(1) || 'todos';
+            history.replaceState({ category: initialCategory }, '', `#${initialCategory}`);
+            updateUIForCategory(initialCategory);
+        }
+
+        initializeApp();
+        
+    </script>
+</body>
+</html>
