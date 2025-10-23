@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -810,19 +811,39 @@
         </form>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
     <script>
         // --- INICIALIZAR ICONOS ---
         // Lo llamamos una sola vez al inicio.
         feather.replace();
+        
+        // --- NUEVO: INICIALIZAR FIREBASE ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyCC7F7nfPqi-FV0GCaqNsuyGeW2YWqASA4",
+          authDomain: "mi-gestor-web-app.firebaseapp.com",
+          projectId: "mi-gestor-web-app",
+          storageBucket: "mi-gestor-web-app.firebasestorage.app",
+          messagingSenderId: "274689364399",
+          appId: "1:274689364399:web:5e009031191b673d235f5a"
+        };
+
+        // Initialize Firebase
+        const app = firebase.initializeApp(firebaseConfig);
+        // Inicializamos Firestore (la base de datos)
+        const db = firebase.firestore(); 
+        console.log("¡Firebase conectado!");
+        // --- FIN DE INICIALIZACIÓN DE FIREBASE ---
+
 
         // --- 1. BASE DE DATOS LOCAL (TEMPORAL) ---
         let enlaces = [
-            // Los datos se cargarán desde localStorage
+            // Los datos se cargarán desde Firebase
         ];
         
         let bovedaItems = [
-            // Los datos se cargarán desde localStorage
+            // Los datos se cargarán desde Firebase
         ];
         
         let currentCategory = 'todos';
@@ -1010,8 +1031,9 @@
             const lowerSearchTerm = searchTerm.toLowerCase();
             
             const itemsToShow = bovedaItems.filter(item => {
-                return item.id.toLowerCase().includes(lowerSearchTerm) ||
-                       item.com.toLowerCase().includes(lowerSearchTerm);
+                // CAMBIO: Buscamos en id_original
+                return (item.id_original && item.id_original.toLowerCase().includes(lowerSearchTerm)) ||
+                       (item.com && item.com.toLowerCase().includes(lowerSearchTerm));
             });
 
             linkGrid.classList.add('hidden');
@@ -1027,16 +1049,14 @@
                     li.className = 'boveda-item';
                     li.innerHTML = `
                         <div class="boveda-item-col">
-                            <strong>ID:</strong> <span>${item.id}</span>
-                        </div>
+                            <strong>ID:</strong> <span>${item.id_original}</span> </div>
                         <div class="boveda-item-col">
                             <strong>COM:</strong> <span>${item.com}</span>
                         </div>
                         <button class="copy-com-btn" data-copy="${item.com}" title="Copiar COM">
                             ${getIcon('copy', { width: 16, height: 16 })}
                         </button>
-                        <button class="delete-boveda-btn" data-id="${item.id}" title="Borrar item">
-                            ${getIcon('trash-2', { width: 16, height: 16 })}
+                        <button class="delete-boveda-btn" data-id="${item.id}" title="Borrar item"> ${getIcon('trash-2', { width: 16, height: 16 })}
                         </button>
                     `;
                     bovedaList.appendChild(li);
@@ -1134,59 +1154,96 @@
             openModal('add-link-modal');
         }
 
-        linkForm.addEventListener('submit', (e) => {
+        // CAMBIO: Convertida en función 'async' para esperar a Firestore
+        linkForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            if (currentEditId) {
-                const linkIndex = enlaces.findIndex(link => link.id.toString() === currentEditId.toString());
-                if (linkIndex === -1) return; 
+            // Deshabilitar el botón para evitar clics duplicados
+            linkSubmitBtn.disabled = true;
+            linkSubmitBtn.textContent = 'Guardando...';
+
+            try {
+                if (currentEditId) {
+                    // --- LÓGICA DE EDICIÓN ---
+                    const linkRef = db.collection('enlaces').doc(currentEditId);
+                    const dataToUpdate = {
+                        title: document.getElementById('link-title').value,
+                        desc: document.getElementById('link-desc').value,
+                        url: document.getElementById('link-url').value,
+                        img: document.getElementById('link-image').value.trim(),
+                        category: document.getElementById('link-category').value,
+                        // No actualizamos la fecha de creación original
+                    };
+                    
+                    await linkRef.update(dataToUpdate);
+                    
+                    // Actualizar el array local para no tener que recargar
+                    const linkIndex = enlaces.findIndex(link => link.id.toString() === currentEditId.toString());
+                    if (linkIndex !== -1) {
+                         enlaces[linkIndex] = { ...enlaces[linkIndex], ...dataToUpdate };
+                    }
+
+                } else {
+                    // --- LÓGICA DE CREACIÓN ---
+                    const nuevoEnlace = {
+                        title: document.getElementById('link-title').value,
+                        desc: document.getElementById('link-desc').value,
+                        url: document.getElementById('link-url').value,
+                        img: document.getElementById('link-image').value.trim(), 
+                        category: document.getElementById('link-category').value,
+                        date: new Date().toLocaleDateString('es-ES'),
+                        dateOriginal: Date.now() // NUEVO: Para poder ordenar
+                    };
+                    
+                    // Añadimos a Firestore, y nos devuelve el documento con su ID
+                    const docRef = await db.collection('enlaces').add(nuevoEnlace);
+                    
+                    // Añadimos al array local (con el ID de Firestore)
+                    enlaces.unshift({ id: docRef.id, ...nuevoEnlace });
+                }
                 
-                enlaces[linkIndex] = {
-                    id: currentEditId, 
-                    title: document.getElementById('link-title').value,
-                    desc: document.getElementById('link-desc').value,
-                    url: document.getElementById('link-url').value,
-                    img: document.getElementById('link-image').value.trim(),
-                    category: document.getElementById('link-category').value,
-                    date: enlaces[linkIndex].date // Mantener la fecha original
-                };
+                renderLinks();
+                closeModal('add-link-modal');
                 
-            } else {
-                const nuevoEnlace = {
-                    id: Date.now(), 
-                    title: document.getElementById('link-title').value,
-                    desc: document.getElementById('link-desc').value,
-                    url: document.getElementById('link-url').value,
-                    img: document.getElementById('link-image').value.trim(), 
-                    category: document.getElementById('link-category').value,
-                    date: new Date().toLocaleDateString('es-ES')
-                };
-                enlaces.unshift(nuevoEnlace);
+            } catch (error) {
+                console.error("Error al guardar enlace: ", error);
+                alert("No se pudo guardar el enlace. Revisa la consola.");
+            } finally {
+                // Volver a habilitar el botón
+                linkSubmitBtn.disabled = false;
+                // El texto del botón se resetea en closeModal()
             }
-            
-            saveData(); // NUEVO: Guardar en localStorage
-            renderLinks();
-            closeModal('add-link-modal');
-            linkForm.reset();
         });
         
-        bovedaForm.addEventListener('submit', (e) => {
+        // CAMBIO: Convertida en función 'async' para esperar a Firestore
+        bovedaForm.addEventListener('submit', async (e) => {
              e.preventDefault();
-             const nuevoItem = {
-                id: document.getElementById('boveda-id').value,
+             
+             const data = {
+                id_original: document.getElementById('boveda-id').value, // CAMBIO: Usamos 'id_original'
                 com: document.getElementById('boveda-com').value
              };
-             bovedaItems.unshift(nuevoItem);
              
-             saveData(); // NUEVO: Guardar en localStorage
-             renderBoveda(searchBar.value);
-             closeModal('boveda-modal');
-             bovedaForm.reset();
+             try {
+                 // Añadimos a Firestore
+                 const docRef = await db.collection('bovedaItems').add(data);
+                 
+                 // Añadimos al array local
+                 bovedaItems.unshift({ id: docRef.id, ...data });
+                 
+                 renderBoveda(searchBar.value);
+                 closeModal('boveda-modal');
+                 bovedaForm.reset();
+             } catch (error) {
+                 console.error("Error al guardar en bóveda: ", error);
+                 alert("No se pudo guardar en la bóveda.");
+             }
         });
 
         // --- 8. LÓGICA "BORRAR", "COPIAR", "EDITAR" (en tarjetas) ---
         
-        linkGrid.addEventListener('click', (e) => {
+        // CAMBIO: Convertida en función 'async' para esperar a Firestore
+        linkGrid.addEventListener('click', async (e) => {
             const deleteBtn = e.target.closest('.delete');
             const editBtn = e.target.closest('.edit');
             const copyBtn = e.target.closest('.copy');
@@ -1194,9 +1251,20 @@
             if (deleteBtn) {
                 const idToDelete = deleteBtn.getAttribute('data-id');
                 if (confirm('¿Estás seguro de que quieres borrar este enlace?')) {
-                    enlaces = enlaces.filter(link => link.id.toString() !== idToDelete);
-                    saveData(); // NUEVO: Guardar en localStorage
-                    renderLinks();
+                    try {
+                        // 1. Borrar de Firestore
+                        await db.collection('enlaces').doc(idToDelete).delete();
+                        
+                        // 2. Borrar del array local
+                        enlaces = enlaces.filter(link => link.id.toString() !== idToDelete);
+                        
+                        // 3. Volver a dibujar
+                        renderLinks();
+                        
+                    } catch (error) {
+                        console.error("Error al borrar enlace: ", error);
+                        alert("No se pudo borrar el enlace.");
+                    }
                 }
                 return; 
             }
@@ -1219,14 +1287,25 @@
             }
         });
         
-        bovedaList.addEventListener('click', (e) => {
+        // CAMBIO: Convertida en función 'async' para esperar a Firestore
+        bovedaList.addEventListener('click', async (e) => {
             const deleteBtn = e.target.closest('.delete-boveda-btn');
             if (deleteBtn) {
                 const idToDelete = deleteBtn.getAttribute('data-id');
                 if (confirm('¿Estás seguro de que quieres borrar este item de la bóveda?')) {
-                    bovedaItems = bovedaItems.filter(item => item.id !== idToDelete);
-                    saveData(); // NUEVO: Guardar en localStorage
-                    renderBoveda(searchBar.value);
+                    try {
+                        // 1. Borrar de Firestore
+                        await db.collection('bovedaItems').doc(idToDelete).delete();
+                        
+                        // 2. Borrar del array local
+                        bovedaItems = bovedaItems.filter(item => item.id.toString() !== idToDelete);
+                        
+                        // 3. Volver a dibujar
+                        renderBoveda(searchBar.value);
+                    } catch (error) {
+                        console.error("Error al borrar item de bóveda: ", error);
+                        alert("No se pudo borrar el item.");
+                    }
                 }
                 return;
             }
@@ -1304,26 +1383,46 @@
         linkSearchBar.addEventListener('input', renderLinks);
 
 
-        // --- NUEVO: 11. PERSISTENCIA DE DATOS (localStorage) ---
+        // --- CAMBIO: 11. PERSISTENCIA DE DATOS (AHORA CON FIREBASE) ---
         
-        function saveData() {
-            localStorage.setItem('gestorEnlaces', JSON.stringify(enlaces));
-            localStorage.setItem('gestorBoveda', JSON.stringify(bovedaItems));
+        // La función saveData() ya no es necesaria, 
+        // guardamos/borramos directamente en Firestore en cada evento.
+
+        // CAMBIO: Convertida en 'async' para cargar desde Firestore
+        async function loadData() {
+            // Cargar Enlaces
+            try {
+                const enlacesSnapshot = await db.collection('enlaces').get();
+                enlaces = enlacesSnapshot.docs.map(doc => ({ 
+                    id: doc.id, // El ID de Firestore
+                    ...doc.data() 
+                }));
+                
+                // Ordenamos para que los más nuevos aparezcan primero
+                enlaces.sort((a, b) => (b.dateOriginal || 0) - (a.dateOriginal || 0)); 
+                
+            } catch (error) {
+                console.error("Error al cargar enlaces: ", error);
+                enlaces = []; // Empezar vacío si hay error
+            }
+
+            // Cargar Bóveda
+            try {
+                const bovedaSnapshot = await db.collection('bovedaItems').get();
+                bovedaItems = bovedaSnapshot.docs.map(doc => ({ 
+                    id: doc.id, // El ID de Firestore
+                    ...doc.data() 
+                }));
+            } catch (error) {
+                console.error("Error al cargar bóveda: ", error);
+                bovedaItems = []; // Empezar vacío si hay error
+            }
         }
 
-        function loadData() {
-            const enlacesGuardados = localStorage.getItem('gestorEnlaces');
-            const bovedaGuardada = localStorage.getItem('gestorBoveda');
 
-            if (enlacesGuardados) {
-                enlaces = JSON.parse(enlacesGuardados);
-            }
-            if (bovedaGuardada) {
-                bovedaItems = JSON.parse(bovedaGuardada);
-            }
-        }
-
-        // --- NUEVO: 12. FUNCIONES DE IMPORTAR/EXPORTAR ---
+        // --- 12. FUNCIONES DE IMPORTAR/EXPORTAR ---
+        // (Estas funciones ahora exportan los datos CARGADOS desde Firebase,
+        // y la importación es solo LOCAL/TEMPORAL)
 
         function exportData() {
             // Prevenir que se cierre el menú si está en móvil
@@ -1371,11 +1470,12 @@
                         const data = JSON.parse(event.target.result);
                         if (data.enlaces || data.bovedaItems) {
                             
-                            if (confirm('¿Quieres reemplazar tus datos actuales con los del archivo? Se perderán los datos locales no guardados.')) {
+                            // CAMBIO: Mensaje actualizado y llamada a saveData() eliminada
+                            if (confirm('¿Quieres reemplazar tus datos locales con los del archivo? (Esto NO se subirá a Firebase, es solo temporal hasta que recargues la página)')) {
                                 enlaces = data.enlaces || [];
                                 bovedaItems = data.bovedaItems || [];
                                 
-                                saveData(); // Guardar los nuevos datos importados
+                                // saveData(); // <-- Eliminado, ya no existe.
                                 
                                 // Ir a 'todos' y refrescar
                                 history.pushState({ category: 'todos' }, '', `#todos`);
@@ -1406,8 +1506,9 @@
 
         // --- 13. INICIO ---
         
-        function initializeApp() {
-            loadData(); // NUEVO: Cargar datos al iniciar
+        // CAMBIO: Convertida en 'async' para esperar a loadData()
+        async function initializeApp() {
+            await loadData(); // NUEVO: Esperar a que los datos carguen desde Firebase
             
             const initialCategory = window.location.hash.substring(1) || 'todos';
             history.replaceState({ category: initialCategory }, '', `#${initialCategory}`);
@@ -1417,5 +1518,43 @@
         initializeApp();
         
     </script>
+<!-- Code injected by live-server -->
+<script>
+	// <![CDATA[  <-- For SVG support
+	if ('WebSocket' in window) {
+		(function () {
+			function refreshCSS() {
+				var sheets = [].slice.call(document.getElementsByTagName("link"));
+				var head = document.getElementsByTagName("head")[0];
+				for (var i = 0; i < sheets.length; ++i) {
+					var elem = sheets[i];
+					var parent = elem.parentElement || head;
+					parent.removeChild(elem);
+					var rel = elem.rel;
+					if (elem.href && typeof rel != "string" || rel.length == 0 || rel.toLowerCase() == "stylesheet") {
+						var url = elem.href.replace(/(&|\?)_cacheOverride=\d+/, '');
+						elem.href = url + (url.indexOf('?') >= 0 ? '&' : '?') + '_cacheOverride=' + (new Date().valueOf());
+					}
+					parent.appendChild(elem);
+				}
+			}
+			var protocol = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
+			var address = protocol + window.location.host + window.location.pathname + '/ws';
+			var socket = new WebSocket(address);
+			socket.onmessage = function (msg) {
+				if (msg.data == 'reload') window.location.reload();
+				else if (msg.data == 'refreshcss') refreshCSS();
+			};
+			if (sessionStorage && !sessionStorage.getItem('IsThisFirstTime_Log_From_LiveServer')) {
+				console.log('Live reload enabled.');
+				sessionStorage.setItem('IsThisFirstTime_Log_From_LiveServer', true);
+			}
+		})();
+	}
+	else {
+		console.error('Upgrade your browser. This Browser is NOT supported WebSocket for Live-Reloading.');
+	}
+	// ]]>
+</script>
 </body>
 </html>
